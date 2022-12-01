@@ -4,12 +4,13 @@ import dedent from 'dedent-js'
 import path from 'path'
 
 type Def = {
-  api: string
+  API: string
   getById: string
   singular: string
   plural: string
   entity: string
   method: string
+  command: string
   ids: string
   entitiesPath: string
 }
@@ -22,12 +23,13 @@ function ec2Describe(
   }: Partial<Def> & { plural?: string } = {}
 ): Def {
   return {
-    api: 'EC2',
+    API: 'EC2',
     getById: `describe${singular}ById`,
     singular,
     plural,
     entity: singular,
     method: `describe${plural}`,
+    command: `Describe${plural}Command`,
     ids: `${singular}Ids`,
     entitiesPath: plural,
     ...options,
@@ -68,27 +70,28 @@ const exportMap: Record<
 > = { './package.json': './package.json' }
 
 async function go() {
-  for (const [api, group] of Object.entries(groupBy(defs, 'api'))) {
-    exportMap[`./${api.toLowerCase()}`] = {
-      types: `./types/v2/${api.toLowerCase()}.d.ts`,
-      import: `./mjs/v2/${api.toLowerCase()}.mjs`,
-      require: `./v2/${api.toLowerCase()}.cjs`,
+  for (const [API, group] of Object.entries(groupBy(defs, 'API'))) {
+    const api = API.toLowerCase()
+
+    exportMap[`./v2/${api}`] = {
+      types: `./types/v2/${api}.d.ts`,
+      import: `./mjs/v2/${api}.mjs`,
+      require: `./v2/${api}.cjs`,
     }
     await writeFile(
-      path.resolve(__dirname, '..', 'mjs', 'v2', `${api.toLowerCase()}.mjs`),
+      path.resolve(__dirname, '..', 'mjs', 'v2', `${api}.mjs`),
       dedent`
-        export * from '../../v2/${api.toLowerCase()}.js'
+        export * from '../../v2/${api}.js'
       `
     )
     await writeFile(
-      path.resolve(__dirname, '..', 'src', 'v2', `${api.toLowerCase()}.ts`),
+      path.resolve(__dirname, '..', 'src', 'v2', `${api}.ts`),
       dedent`
         import AWS from 'aws-sdk'
 
         ${group
           .map(
             ({
-              api,
               getById,
               entity,
               singular,
@@ -97,11 +100,55 @@ async function go() {
               entitiesPath,
             }) => dedent`
               export async function ${getById}(
-                client: AWS.${api},
+                client: AWS.${API},
                 id: string
-              ): Promise<AWS.${api}.${entity}> {
+              ): Promise<AWS.${API}.${entity}> {
                 const entity = (await client.${method}({ ${ids}: [id] }).promise())
                   ?.${entitiesPath}?.[0]
+                if (!entity) throw new Error(\`${singular} with id \${id} not found\`)
+                return entity
+              }
+            `
+          )
+          .join('\n\n')}
+      `
+    )
+
+    exportMap[`./v3/${api}`] = {
+      types: `./types/v3/${api}.d.ts`,
+      import: `./mjs/v3/${api}.mjs`,
+      require: `./v3/${api}.cjs`,
+    }
+    await writeFile(
+      path.resolve(__dirname, '..', 'mjs', 'v3', `${api}.mjs`),
+      dedent`
+        export * from '../../v3/${api}.js'
+      `
+    )
+    await writeFile(
+      path.resolve(__dirname, '..', 'src', 'v3', `${api}.ts`),
+      dedent`
+        import * as ${API} from '@aws-sdk/client-${api}'
+
+        ${group
+          .map(
+            ({
+              getById,
+              entity,
+              singular,
+              command,
+              ids,
+              entitiesPath,
+            }) => dedent`
+              export async function ${getById}(
+                client: ${API}.${API}Client,
+                id: string
+              ): Promise<${API}.${entity}> {
+                const entity = (
+                  await client.send(
+                    new ${API}.${command}({ ${ids}: [id] })
+                  )
+                )?.${entitiesPath}?.[0]
                 if (!entity) throw new Error(\`${singular} with id \${id} not found\`)
                 return entity
               }
