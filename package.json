@@ -10,11 +10,11 @@
     "prettier:check": "prettier --list-different $npm_package_config_prettier",
     "tsc": "tsc",
     "tsc:watch": "npm run tsc -- --watch",
-    "clean": "rimraf $(cd src; ls) src types mjs '*.js' '*.d.ts' '*.js.flow' && mkdir src",
+    "clean": "mkdir -p src && rimraf $(cd src; ls) src types mjs '*.js' '*.d.ts' '*.js.flow' && mkdir src",
     "build": "npm run generate && npm run build:types && npm run build:cjs",
     "generate": "rimraf src && mkdir src && ts-node scripts/generate.ts",
     "build:types": "rimraf types && tsc -p tsconfig.types.json",
-    "build:cjs": "rimraf $(cd src; ls) && tsc -p tsconfig.cjs.json",
+    "build:cjs": "mkdir -p src && rimraf $(cd src; ls) && tsc -p tsconfig.cjs.json",
     "prepublishOnly": "npm run clean && npm run prettier:check && npm run lint && npm run build",
     "open:coverage": "open coverage/lcov-report/index.html",
     "semantic-release": "semantic-release"
