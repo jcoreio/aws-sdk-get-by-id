@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["./src"],
+  "exclude": ["node_modules", "./src/**/*.spec.ts", "./test", "./scripts"],
+  "compilerOptions": {
+    "target": "ES5",
+    "moduleResolution": "node",
+    "declaration": true /* Generates corresponding '.d.ts' file. */,
+    "noEmit": false,
+    "rootDir": "./src",
+    "outDir": "./"
+  }
+}

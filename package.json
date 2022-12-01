@@ -1,7 +1,7 @@
 {
-  "name": "typescript-library-skeleton",
+  "name": "@jcoreio/aws-sdk-get-by-id",
   "version": "0.0.0-development",
-  "description": "my personal ES2015 library project skeleton",
+  "description": "convenience methods to get AWS entities by id or error",
   "main": "index.js",
   "sideEffects": false,
   "scripts": {
@@ -11,22 +11,28 @@
     "prettier:check": "prettier --list-different $npm_package_config_prettier",
     "tsc": "tsc",
     "tsc:watch": "npm run tsc -- --watch",
-    "clean": "rimraf es lib $(cd src; ls) *.js *.d.ts *.js.flow",
-    "build": "npm run clean && npm run build:types && npm run build:js",
-    "build:types": "tsc -p tsconfig.build.json && tsc -p tsconfig.build.json --outDir es && copy 'src/**/*.js.flow' . && copy 'src/**/*.js.flow' es",
-    "build:js": "babel src --out-dir es --extensions \".ts\" --source-maps inline && cross-env BABEL_ENV=es5 babel src --out-dir . --extensions \".ts\"",
-    "test": "cross-env NODE_ENV=test BABEL_ENV=es5 mocha $npm_package_config_mocha && cross-env NODE_ENV=test BABEL_ENV=coverage nyc --reporter=lcov --reporter=text mocha $npm_package_config_mocha",
-    "test:watch": "cross-env NODE_ENV=test BABEL_ENV=test mocha $npm_package_config_mocha --watch",
-    "test:debug": "cross-env NODE_ENV=test BABEL_ENV=test mocha --inspect-brk $npm_package_config_mocha",
+    "clean": "rimraf $(cd src; ls) src types mjs '*.js' '*.d.ts' '*.js.flow' && mkdir src",
+    "build": "npm run generate && npm run build:types && npm run build:cjs",
+    "generate": "rimraf src && mkdir src && ts-node scripts/generate.ts",
+    "build:types": "rimraf types && tsc -p tsconfig.types.json",
+    "build:cjs": "rimraf $(cd src; ls) && tsc -p tsconfig.cjs.json",
     "codecov": "nyc report --reporter=text-lcov > coverage.lcov; codecov",
-    "prepublishOnly": "npm run clean && npm run prettier:check && npm run lint && flow && npm test && npm run build",
+    "prepublishOnly": "npm run clean && npm run prettier:check && npm run lint && npm run build",
     "open:coverage": "open coverage/lcov-report/index.html",
     "semantic-release": "semantic-release"
   },
+  "exports": {
+    "./package.json": "./package.json",
+    "./ec2": {
+      "types": "./types/v2/ec2.d.ts",
+      "import": "./mjs/v2/ec2.mjs",
+      "require": "./v2/ec2.cjs"
+    }
+  },
   "config": {
-    "lint": "--cache --ext .js,.ts src test",
+    "lint": "--cache --ext .js,.ts scripts",
     "mocha": "--extension js --extension ts test/configure.js 'src/**/*.spec.ts' 'test/**/*.ts'",
-    "prettier": ".babelrc.js *.{json,md} {src,test}/**/*.{js,ts,flow}",
+    "prettier": "*.{json,md} {scripts,test}/**/*.{js,ts,flow}",
     "commitizen": {
       "path": "cz-conventional-changelog"
     }
@@ -61,63 +67,61 @@
       "src/**/*.spec.ts"
     ],
     "require": [
-      "@babel/register"
+      "ts-node/register"
     ],
     "sourceMap": false,
     "instrument": false
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/jedwards1211/typescript-library-skeleton.git"
+    "url": "https://github.com/jcoreio/aws-sdk-get-by-id.git"
   },
   "keywords": [
-    "typescript"
+    "aws",
+    "aws-sdk"
   ],
   "author": "Andy Edwards",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/jedwards1211/typescript-library-skeleton/issues"
+    "url": "https://github.com/jcoreio/aws-sdk-get-by-id/issues"
   },
-  "homepage": "https://github.com/jedwards1211/typescript-library-skeleton#readme",
+  "homepage": "https://github.com/jcoreio/aws-sdk-get-by-id#readme",
   "devDependencies": {
-    "@babel/cli": "^7.15.7",
-    "@babel/core": "^7.15.5",
-    "@babel/plugin-proposal-export-default-from": "^7.14.5",
-    "@babel/plugin-proposal-export-namespace-from": "^7.14.5",
-    "@babel/plugin-transform-runtime": "^7.15.0",
-    "@babel/preset-env": "^7.15.6",
-    "@babel/preset-typescript": "^7.15.0",
-    "@babel/register": "^7.15.3",
     "@commitlint/cli": "^13.2.0",
     "@commitlint/config-conventional": "^13.2.0",
     "@jedwards1211/commitlint-config": "^1.0.2",
     "@jedwards1211/eslint-config": "^2.0.2",
     "@jedwards1211/eslint-config-typescript": "^2.0.2",
     "@types/chai": "^4.2.22",
+    "@types/fs-extra": "^9.0.13",
+    "@types/glob": "^8.0.0",
+    "@types/lodash": "^4.14.190",
     "@types/mocha": "^9.0.0",
-    "@types/node": "^16.10.2",
+    "@types/node": "^16.11.10",
     "@typescript-eslint/eslint-plugin": "^4.32.0",
     "@typescript-eslint/parser": "^4.32.0",
     "@typescript-eslint/typescript-estree": "^4.32.0",
-    "babel-plugin-istanbul": "^6.0.0",
+    "aws-sdk": "^2.1264.0",
     "chai": "^4.3.4",
     "codecov": "^3.8.3",
     "copy": "^0.3.2",
     "cross-env": "^7.0.3",
+    "dedent-js": "^1.0.1",
     "eslint": "^7.32.0",
     "eslint-config-prettier": "^8.3.0",
     "flow-bin": "^0.161.0",
+    "fs-extra": "^11.1.0",
+    "glob": "^8.0.3",
     "husky": "^7.0.2",
     "lint-staged": "^11.1.2",
+    "lodash": "^4.17.21",
     "mocha": "^9.1.2",
     "nyc": "^15.1.0",
     "prettier": "^2.4.1",
     "prettier-eslint": "^13.0.0",
     "rimraf": "^3.0.2",
     "semantic-release": "^18.0.0",
+    "ts-node": "^10.9.1",
     "typescript": "^4.4.3"
-  },
-  "dependencies": {
-    "@babel/runtime": "^7.15.4"
   }
 }
