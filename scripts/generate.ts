@@ -2,110 +2,157 @@ import fs from 'fs-extra'
 import { groupBy } from 'lodash'
 import dedent from 'dedent-js'
 import path from 'path'
-
-type Def = {
-  API: string
-  getById: string
-  singular: string
-  plural: string
-  entity: string
-  method: string
-  command: string
-  ids: string
-  entitiesPath: string
-}
-
-function ec2Describe(
-  singular: string,
-  {
-    plural = singular + 's',
-    ...options
-  }: Partial<Def> & { plural?: string } = {}
-): Def {
-  return {
-    API: 'EC2',
-    getById: `describe${singular}ById`,
-    singular,
-    plural,
-    entity: singular,
-    method: `describe${plural}`,
-    command: `Describe${plural}Command`,
-    ids: `${singular}Ids`,
-    entitiesPath: plural,
-    ...options,
-  }
-}
-
-const defs: Def[] = [
-  ec2Describe('CapacityReservationFleet'),
-  ec2Describe('CapacityReservation'),
-  ec2Describe('CarrierGateway'),
-  ec2Describe('ClientVpnEndpoint'),
-  ec2Describe('CoipPool', { ids: 'PoolIds' }),
-  ec2Describe('ConversionTask'),
-  ec2Describe('CustomerGateway'),
-  ec2Describe('EgressOnlyInternetGateway'),
-  ec2Describe('ElasticGpu', {
-    entity: 'ElasticGpus',
-    entitiesPath: 'ElasticGpuSet',
-  }),
-  ec2Describe('ExportImageTask'),
-  ec2Describe('ExportTask'),
-  ec2Describe('Instance', { entitiesPath: 'Reservations?.[0]?.Instances' }),
-  ec2Describe('SecurityGroup', { ids: 'GroupIds' }),
-  ec2Describe('Snapshot'),
-  ec2Describe('Subnet'),
-  ec2Describe('Volume'),
-  ec2Describe('Vpc'),
-]
-
-async function writeFile(file: string, content: string): Promise<void> {
-  await fs.mkdirs(path.dirname(file))
-  await fs.writeFile(file, content, 'utf8')
-}
-
-const exportMap: Record<
-  string,
-  string | { types: string; import: string; require: string }
-> = { './package.json': './package.json' }
+import { defs } from './defs'
+import prettier from 'prettier'
 
 async function go() {
-  for (const [API, group] of Object.entries(groupBy(defs, 'API'))) {
-    const api = API.toLowerCase()
+  const config = await prettier.resolveConfig(__filename)
 
-    exportMap[`./v2/${api}`] = {
-      types: `./types/v2/${api}.d.ts`,
-      import: `./mjs/v2/${api}.mjs`,
-      require: `./v2/${api}.cjs`,
-    }
-    await writeFile(
-      path.resolve(__dirname, '..', 'mjs', 'v2', `${api}.mjs`),
-      dedent`
-        export * from '../../v2/${api}.js'
-      `
+  const exportMap: Record<
+    string,
+    string | { types: string; import: string; require: string }
+  > = { './package.json': './package.json' }
+
+  async function writeFile(file: string, content: string): Promise<void> {
+    await fs.mkdirs(path.dirname(file))
+    await fs.writeFile(
+      file,
+      prettier.format(content.replace(/\n?$/, '\n'), {
+        ...config,
+        filepath: file,
+      }),
+      'utf8'
     )
+  }
+
+  const root = path.resolve(__dirname, '..')
+  const src = path.resolve(root, 'src')
+
+  async function writeSourceFile(file: string, content: string): Promise<void> {
+    await writeFile(path.join(src, file), content)
+    const rel = file.replace(/\.[^.]+$/, '')
+    exportMap[`./${rel}`] = {
+      types: `./types/${rel}.d.ts`,
+      import: `./mjs/${rel}.mjs`,
+      require: `./${rel}.js`,
+    }
+    const mjsFile = path.resolve(root, 'mjs', `${rel}.mjs`)
     await writeFile(
-      path.resolve(__dirname, '..', 'src', 'v2', `${api}.ts`),
+      mjsFile,
+      dedent`
+      export * from '${path.join(
+        path.relative(path.dirname(mjsFile), root),
+        `${rel}.js`
+      )}'
+    `
+    )
+  }
+
+  await writeSourceFile(
+    'errors.ts',
+    dedent`
+      export class NotFoundError extends Error {
+        constructor(
+          public readonly entityName: string,
+          public readonly idProp: string,
+          public readonly idValue: string
+        ) {
+          super(\`\${entityName} with \${idProp} \${idValue} not found\`)
+        }
+      }
+    `
+  )
+
+  const readme = []
+
+  const packageJsonPath = path.resolve(root, 'package.json')
+  const packageJson = await fs.readJson(packageJsonPath)
+
+  const groups = groupBy(defs, 'api')
+
+  readme.push(`# API Table of Contents`)
+
+  for (const [api, group] of Object.entries(groups)) {
+    const API = group[0].API
+
+    readme.push(dedent`
+      - [${API}](#${api})
+        ${group
+          .map(({ method }) => `- [\`${method}\`](#${method.toLowerCase()})`)
+          .join('\n  ')}
+    `)
+  }
+
+  for (const [api, group] of Object.entries(groups)) {
+    const API = group[0].API
+
+    readme.push(`# ${API}`)
+
+    for (const { method, entityType } of group) {
+      readme.push(dedent`
+        ## ${method}
+
+        ### \`aws-sdk\`
+
+        \`\`\`ts
+        import AWS from 'aws-sdk'
+        import { ${method} } from '${packageJson.name}/v2/${api}'
+        \`\`\`
+
+        #### Signature
+
+        \`\`\`ts
+        declare export async function ${method}(
+          client: AWS.${API},
+          id: string
+        ): Promise<AWS.${API}.${entityType}>
+        \`\`\`
+
+        ### \`@aws-sdk/client-${api}\`
+
+        \`\`\`ts
+        import ${API} from '@aws-sdk/client-${api}'
+        import { ${method} } from '${packageJson.name}/v3/${api}'
+        \`\`\`
+
+        #### Signature
+
+        \`\`\`ts
+        declare export async function ${method}(
+          client: ${API}.${API}Client,
+          id: string
+        ): Promise<${API}.${entityType}>
+        \`\`\`
+      `)
+    }
+
+    await writeSourceFile(
+      `v2/${api}.ts`,
       dedent`
         import AWS from 'aws-sdk'
+        import { NotFoundError } from '../errors'
 
         ${group
           .map(
             ({
-              getById,
-              entity,
-              singular,
               method,
+              entityType,
+              apiMethod,
+              id,
               ids,
               entitiesPath,
             }) => dedent`
-              export async function ${getById}(
+              export async function ${method}(
                 client: AWS.${API},
                 id: string
-              ): Promise<AWS.${API}.${entity}> {
-                const entity = (await client.${method}({ ${ids}: [id] }).promise())
+              ): Promise<AWS.${API}.${entityType}> {
+                const entity = (await client.${apiMethod}({ ${ids}: [id] }).promise())
                   ?.${entitiesPath}?.[0]
-                if (!entity) throw new Error(\`${singular} with id \${id} not found\`)
+                if (!entity) {
+                  throw new NotFoundError(${JSON.stringify(
+                    entityType
+                  )}, ${JSON.stringify(id)}, id)
+                }
                 return entity
               }
             `
@@ -114,42 +161,29 @@ async function go() {
       `
     )
 
-    exportMap[`./v3/${api}`] = {
-      types: `./types/v3/${api}.d.ts`,
-      import: `./mjs/v3/${api}.mjs`,
-      require: `./v3/${api}.cjs`,
-    }
-    await writeFile(
-      path.resolve(__dirname, '..', 'mjs', 'v3', `${api}.mjs`),
-      dedent`
-        export * from '../../v3/${api}.js'
-      `
-    )
-    await writeFile(
-      path.resolve(__dirname, '..', 'src', 'v3', `${api}.ts`),
+    await writeSourceFile(
+      `v3/${api}.ts`,
       dedent`
         import * as ${API} from '@aws-sdk/client-${api}'
+        import { NotFoundError } from '../errors'
 
         ${group
           .map(
-            ({
-              getById,
-              entity,
-              singular,
-              command,
-              ids,
-              entitiesPath,
-            }) => dedent`
-              export async function ${getById}(
+            ({ method, entityType, command, id, ids, entitiesPath }) => dedent`
+              export async function ${method}(
                 client: ${API}.${API}Client,
                 id: string
-              ): Promise<${API}.${entity}> {
+              ): Promise<${API}.${entityType}> {
                 const entity = (
                   await client.send(
                     new ${API}.${command}({ ${ids}: [id] })
                   )
                 )?.${entitiesPath}?.[0]
-                if (!entity) throw new Error(\`${singular} with id \${id} not found\`)
+                if (!entity) {
+                  throw new NotFoundError(${JSON.stringify(
+                    entityType
+                  )}, ${JSON.stringify(id)}, id)
+                }
                 return entity
               }
             `
@@ -159,9 +193,20 @@ async function go() {
     )
   }
 
-  const packageJsonPath = path.resolve(__dirname, '..', 'package.json')
-  const packageJson = await fs.readJson(packageJsonPath)
   packageJson.exports = exportMap
   await fs.writeJson(packageJsonPath, packageJson, { spaces: 2 })
+
+  {
+    const readmePath = path.resolve(root, 'README.md')
+    const README = await fs.readFile(readmePath, 'utf8')
+    const lines = README.split(/\r\n?|\n/gm)
+    const start = lines.findIndex((l) => /<!-- defs -->/.test(l))
+    const end = lines.findIndex((l) => /<!-- defsend -->/.test(l))
+    if (start != null && end != null) {
+      lines.splice(start + 1, end - start - 1, readme.join('\n\n'))
+    }
+    await writeFile(readmePath, lines.join('\n'))
+  }
 }
+
 go()

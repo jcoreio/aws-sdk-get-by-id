@@ -21,8 +21,5 @@ jobs:
           name: build
           command: pnpm prepublishOnly
       - run:
-          name: upload test coverage
-          command: pnpm codecov
-      - run:
           name: release
           command: pnpm semantic-release
